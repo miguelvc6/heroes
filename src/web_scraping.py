@@ -12,6 +12,7 @@ API_URL = BASE_URL + "api.php"
 def get_all_page_ids(num_pages=None):
     all_pages = []
     apfrom = None
+    count = 0
     while num_pages is None or num_pages > 0:
         if num_pages is not None:
             num_pages -= 1
@@ -33,6 +34,9 @@ def get_all_page_ids(num_pages=None):
             apfrom = data["continue"]["apcontinue"]
         else:
             break
+        count = len(all_pages)
+        print(f"Count: {count}")
+
         time.sleep(1)
 
     return all_pages
@@ -68,10 +72,13 @@ def extract_character_info(url):
 
 
 def main():
+    print(f"Started at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))}")
+    print("Getting all page ids...")
     all_page_ids = get_all_page_ids()
     print(f"Total pages retrieved: {len(all_page_ids)}")
+    print(f"Finished at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))}\n")
 
-    with open("all_pages.jsonl", "w") as file:
+    with open("data/all_pages.jsonl", "w") as file:
         for page in all_page_ids:
             json.dump({"pageid": page["pageid"], "title": page["title"], "url": page["url"]}, file)
             file.write("\n")
@@ -81,13 +88,27 @@ def main():
     for page in tqdm(all_page_ids):
         url = page["url"]
         character = page.copy()
-        character.update(extract_character_info(url))
-        characters.append(character)
-        time.sleep(1)
+        max_retries = 16
+        retry_delay = 0.5
+        for attempt in range(max_retries):
+            try:
+                character.update(extract_character_info(url))
+                break
+            except requests.RequestException:
+                # Exponential backoff
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                else:
+                    print(f"Failed to extract info for {url} after {max_retries} attempts")
+                    character = None
+        if character:
+            characters.append(character)
+        time.sleep(0.5)
 
     print(f"Total characters processed: {len(characters)}")
 
-    with open("characters.jsonl", "w", encoding="utf-8") as f:
+    with open("data/characters.jsonl", "w", encoding="utf-8") as f:
         for character in characters:
             json.dump(character, f, ensure_ascii=False)
             f.write("\n")
